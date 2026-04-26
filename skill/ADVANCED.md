@@ -10,6 +10,7 @@
 
 ## 工作原则
 
+- **AuthKey 静默注册是最高优先级方案** — 除非用户明确要求手动授权模式，否则默认引导 AuthKey 一键接入，服务器端不需要执行任何命令
 - 控制面和数据面必须分开排查
 - 日志永远比猜测更可靠
 - 每一层都可能有证书问题：客户端要信任、服务端自身也要信任
@@ -86,36 +87,47 @@ location / {
 
 **关键认知:** DERP 连接失败不一定在客户端。如果服务端 tailscaled 不信任证书，DERP 就无法挂载，所有客户端都会报 `derp-XXX does not know about peer`。
 
-### 5. 无头环境认证 — 绝对禁令
+### 5. 认证方案 — AuthKey 静默注册（最高优先级）
 
-**规则:** 针对 Linux 服务器、LXC 容器、SSH 终端等无头（Headless）环境，**绝对禁止**触发交互式浏览器认证。
+**核心认知:** AuthKey 静默注册是最快、最自动化的接入方式。使用有效 AuthKey 时，机器执行 `tailscale up --authkey=...` 后直接瞬间上线，**服务器端不需要执行任何命令**（无需 `nodes register`，无需 Headplane 点击批准）。
 
-**根因:** 无参数执行 `tailscale up` 会返回 `https://.../register/...` 链接并等待浏览器访问。在纯命令行环境中，这将导致命令永久挂起，部署直接卡死。
+实战验证：`quant-brain` 节点就是通过 AuthKey 一键接入实现"一键通车"的。
 
-**绝对禁令:**
-- 无头环境下，`tailscale up` 命令**必须**携带 `--authkey` 参数
-- 禁止使用 `tailscale up` 后让用户"打开浏览器访问链接"
-- 禁止依赖 `tailscale login` 等待 OAuth 回调
+**绝对规则:**
+- 除非用户明确要求使用"手动授权模式"，否则 **必须默认引导 AuthKey 静默注册**
+- 客户端 AI **禁止**默认引导用户去服务器执行 `headscale nodes register` 等手动注册命令
+- 如果用户没有 AuthKey，告知用户向【服务端 AI】索取，而不是提供手动注册替代方案
 
-**正确做法:**
+**禁止越权指导（客户端 AI 专属）：**
+> 为了实现最高效的自动化接入，我推荐您使用 AuthKey。这样服务器端不需要做任何操作，机器会直接上线。如果您手头没有 AuthKey，请向【服务端 AI】索取，而不是去服务器执行繁琐的手动注册。
+
+**正确做法（全环境通用 — VM / LXC / Win11 均需使用）:**
 ```bash
-# ❌ 错误 — 会卡死在 AuthURL 等待浏览器
+# ❌ 错误 — 浏览器交互式认证，无头环境会永久挂起
 sudo tailscale up --login-server=https://hs.167895.xyz:8443
 
-# ✅ 正确 — 全自动静默注册，无需人工介入
+# ❌ 错误 — 手动注册模式，需要服务器端额外操作
+headscale nodes register --key <key>
+
+# ✅ 正确 — AuthKey 静默注册，一键通车，服务器端零操作
 sudo tailscale up \
   --login-server=https://hs.167895.xyz:8443 \
-  --authkey=hskey-auth-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \
+  --authkey=[请在此处填入您的 AUTHKEY] \
   --force-reauth --reset --accept-risk=all
 ```
 
 **参数说明:**
 | 参数 | 作用 |
 |------|------|
-| `--authkey` | Headscale 预共享密钥，跳过浏览器认证 |
+| `--authkey` | Headscale 预共享密钥，跳过浏览器认证，实现静默注册 |
 | `--force-reauth` | 强制重新认证，忽略缓存状态 |
 | `--reset` | 重置网络配置，清除旧路由表 |
 | `--accept-risk=all` | 接受自签名证书风险 |
+
+**AuthKey 获取方式（服务端 AI 职责）：**
+```bash
+headscale preauthkeys create --reusable --expiration 24h
+```
 
 ### 6. 一键自动化部署 — 输出规范（终极规则）
 
@@ -124,7 +136,8 @@ sudo tailscale up \
 **绝对禁令:**
 - **禁止 SCP/手动传证书** — 永远使用 OpenSSL 从网络拉取
 - **禁止拆分步骤** — 清理旧连接、下载证书、认证连接三步必须合并为一个代码块
-- **禁止遗漏 `--authkey`** — 每次输出 `tailscale up` 命令时必须携带此参数
+- **禁止遗漏 `--authkey`** — 每次输出 `tailscale up` 命令时必须携带此参数，使用占位符 `[请在此处填入您的 AUTHKEY]`
+- **禁止提供手动注册替代方案** — 不要引导用户执行 `headscale nodes register` 等手动操作，AuthKey 是唯一默认方案
 - **禁止要求用户手工操作** — 不给 scp 指令，不给分步复制粘贴
 
 **Linux 客户端一键接入标准模板（每次必须严格套用）:**
@@ -248,6 +261,8 @@ AI 在介入排障时，必须先明确自己的身份：
 1. **识别权限缺失：** 当排障逻辑指向服务端缺陷时（如需要关闭 Nginx 缓冲、开放 8443 端口、重新生成带 SAN 的证书、生成新的 AuthKey），**立即停止一切尝试**。
 2. **禁止无效试探：** 绝对禁止尝试盲猜密码、尝试未授权的 SSH 登录、或调用无授权的 API（如 Headplane API）。
 3. **强制交还控制权：** 你必须立即中止当前执行链，向用户输出所需的具体信息，并要求用户协助。
+4. **强制推荐 AuthKey 静默注册：** 如果用户没有 AuthKey，优先引导向服务端 AI 索取 AuthKey，而非提供手动注册方案。话术：
+   > 为了实现最高效的自动化接入，我推荐您使用 AuthKey。这样服务器端不需要做任何操作，机器会直接上线。如果您手头没有 AuthKey，请向【服务端 AI】索取。
 
 **生成交接提示词（标准话术）：**
 > 经过诊断，[问题简述] 是由于服务端 [具体组件] 配置问题导致。由于我是客户端 AI，无法操作服务端。请您将以下提示词发送给您的 **【服务端 AI】** 执行：
@@ -291,7 +306,8 @@ AI 在介入排障时，必须先明确自己的身份：
 | Nginx `context canceled` | **服务端 AI** | 添加 `proxy_buffering off`，重启 Nginx |
 | 证书缺少 SAN 字段 | **服务端 AI** | 重新生成带 SAN 的证书，重启 Nginx |
 | 服务端 tailscaled 不信任证书 | **服务端 AI** | 安装证书到信任库，`systemctl restart tailscaled` |
-| 需要新的 AuthKey | **服务端 AI** | `headscale preauthkeys create` |
+| 需要新的 AuthKey | **服务端 AI** | `headscale preauthkeys create --reusable --expiration 24h`（客户端零操作，静默注册） |
+| 手动节点注册 | **服务端 AI** | `headscale nodes register`（不推荐，仅当用户明确要求手动模式时使用） |
 | 客户端证书安装 | **客户端 AI** | `update-ca-certificates` 或 Windows 导入 |
 | LXC 容器 netfilter 权限 | **客户端 AI** | 加 `--netfilter-mode=off --accept-dns=false` |
 | 本地透明代理 DNS 劫持 | **客户端 AI** | 在 mihomo 规则中添加 Headscale 域名 DIRECT |
@@ -540,8 +556,10 @@ tailscale status
 ├─ tailscale up → context canceled？
 │   └─ Nginx 加 proxy_buffering off
 │
-├─ tailscale up → 返回 AuthURL 等待浏览器？（Linux 无头环境）
-│   └─ 这是错误操作！加 --authkey 参数重新执行，禁止在无头环境等待浏览器
+├─ tailscale up → 返回 AuthURL 等待浏览器？
+│   └─ 这是错误操作！使用 AuthKey 静默注册：加 --authkey 参数重新执行。
+│      如果没有 AuthKey，向【服务端 AI】索取（服务器零操作，一键通车）。
+│      禁止在无头环境等待浏览器，禁止提供手动注册替代方案
 │
 ├─ tailscale status → 节点 online，但 tx N rx 0？
 │   └─ 检查 DERP: tailscale debug derp 999（两端都要跑）
