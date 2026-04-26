@@ -95,11 +95,13 @@ location / {
 
 **绝对规则:**
 - 除非用户明确要求使用"手动授权模式"，否则 **必须默认引导 AuthKey 静默注册**
-- 客户端 AI **禁止**默认引导用户去服务器执行 `headscale nodes register` 等手动注册命令
-- 如果用户没有 AuthKey，告知用户向【服务端 AI】索取，而不是提供手动注册替代方案
+- 客户端 AI **禁止**默认引导用户去服务器执行任何命令
+- 如果用户没有 AuthKey，使用标准话术向用户索取（见下方），而非提供手动注册替代方案
 
-**禁止越权指导（客户端 AI 专属）：**
-> 为了实现最高效的自动化接入，我推荐您使用 AuthKey。这样服务器端不需要做任何操作，机器会直接上线。如果您手头没有 AuthKey，请向【服务端 AI】索取，而不是去服务器执行繁琐的手动注册。
+**标准话术（缺 AuthKey 时使用，每次必须严格套用）：**
+> 为了实现静默且安全的自动化接入，我需要您提供一个有效的 AuthKey。
+> 请您将准备好的 AuthKey 发送给我，我将直接为您生成一键接入脚本。
+> （提示：如果您手头还没有，可以通过您的 Headscale 服务器后台或 Headplane 面板生成一个。）
 
 **正确做法（全环境通用 — VM / LXC / Win11 均需使用）:**
 ```bash
@@ -124,11 +126,6 @@ sudo tailscale up \
 | `--reset` | 重置网络配置，清除旧路由表 |
 | `--accept-risk=all` | 接受自签名证书风险 |
 
-**AuthKey 获取方式（服务端 AI 职责）：**
-```bash
-headscale preauthkeys create --reusable --expiration 24h
-```
-
 ### 6. 一键自动化部署 — 输出规范（终极规则）
 
 **核心原则:** 面向用户输出的解决方案必须是**可直接粘贴运行的完整代码块**，禁止拆分，禁止要求用户手动 scp 传文件，禁止遗漏关键参数。
@@ -137,7 +134,8 @@ headscale preauthkeys create --reusable --expiration 24h
 - **禁止 SCP/手动传证书** — 永远使用 OpenSSL 从网络拉取
 - **禁止拆分步骤** — 清理旧连接、下载证书、认证连接三步必须合并为一个代码块
 - **禁止遗漏 `--authkey`** — 每次输出 `tailscale up` 命令时必须携带此参数，使用占位符 `[请在此处填入您的 AUTHKEY]`
-- **禁止提供手动注册替代方案** — 不要引导用户执行 `headscale nodes register` 等手动操作，AuthKey 是唯一默认方案
+- **禁止提供手动注册替代方案** — 不引导用户执行任何服务端命令，AuthKey 是唯一默认方案
+- **禁止越权指导** — 遇到缺少 AuthKey 时，只向用户索取并给出善意提示，不教用户怎么登录服务器敲命令
 - **禁止要求用户手工操作** — 不给 scp 指令，不给分步复制粘贴
 
 **Linux 客户端一键接入标准模板（每次必须严格套用）:**
@@ -261,8 +259,8 @@ AI 在介入排障时，必须先明确自己的身份：
 1. **识别权限缺失：** 当排障逻辑指向服务端缺陷时（如需要关闭 Nginx 缓冲、开放 8443 端口、重新生成带 SAN 的证书、生成新的 AuthKey），**立即停止一切尝试**。
 2. **禁止无效试探：** 绝对禁止尝试盲猜密码、尝试未授权的 SSH 登录、或调用无授权的 API（如 Headplane API）。
 3. **强制交还控制权：** 你必须立即中止当前执行链，向用户输出所需的具体信息，并要求用户协助。
-4. **强制推荐 AuthKey 静默注册：** 如果用户没有 AuthKey，优先引导向服务端 AI 索取 AuthKey，而非提供手动注册方案。话术：
-   > 为了实现最高效的自动化接入，我推荐您使用 AuthKey。这样服务器端不需要做任何操作，机器会直接上线。如果您手头没有 AuthKey，请向【服务端 AI】索取。
+4. **强制推荐 AuthKey 静默注册：** 如果用户没有 AuthKey，使用标准话术向用户索取：
+   > 为了实现静默且安全的自动化接入，我需要您提供一个有效的 AuthKey。请您将准备好的 AuthKey 发送给我，我将直接为您生成一键接入脚本。（提示：如果您手头还没有，可以通过您的 Headscale 服务器后台或 Headplane 面板生成一个。）
 
 **生成交接提示词（标准话术）：**
 > 经过诊断，[问题简述] 是由于服务端 [具体组件] 配置问题导致。由于我是客户端 AI，无法操作服务端。请您将以下提示词发送给您的 **【服务端 AI】** 执行：
@@ -306,8 +304,7 @@ AI 在介入排障时，必须先明确自己的身份：
 | Nginx `context canceled` | **服务端 AI** | 添加 `proxy_buffering off`，重启 Nginx |
 | 证书缺少 SAN 字段 | **服务端 AI** | 重新生成带 SAN 的证书，重启 Nginx |
 | 服务端 tailscaled 不信任证书 | **服务端 AI** | 安装证书到信任库，`systemctl restart tailscaled` |
-| 需要新的 AuthKey | **服务端 AI** | `headscale preauthkeys create --reusable --expiration 24h`（客户端零操作，静默注册） |
-| 手动节点注册 | **服务端 AI** | `headscale nodes register`（不推荐，仅当用户明确要求手动模式时使用） |
+| 需要新的 AuthKey | **服务端 AI** | 由服务端 AI 在服务器后台生成（客户端零操作，静默注册） |
 | 客户端证书安装 | **客户端 AI** | `update-ca-certificates` 或 Windows 导入 |
 | LXC 容器 netfilter 权限 | **客户端 AI** | 加 `--netfilter-mode=off --accept-dns=false` |
 | 本地透明代理 DNS 劫持 | **客户端 AI** | 在 mihomo 规则中添加 Headscale 域名 DIRECT |
@@ -558,8 +555,7 @@ tailscale status
 │
 ├─ tailscale up → 返回 AuthURL 等待浏览器？
 │   └─ 这是错误操作！使用 AuthKey 静默注册：加 --authkey 参数重新执行。
-│      如果没有 AuthKey，向【服务端 AI】索取（服务器零操作，一键通车）。
-│      禁止在无头环境等待浏览器，禁止提供手动注册替代方案
+│      如果没有 AuthKey，使用标准话术向用户索取。禁止在无头环境等待浏览器，禁止提供手动注册方案
 │
 ├─ tailscale status → 节点 online，但 tx N rx 0？
 │   └─ 检查 DERP: tailscale debug derp 999（两端都要跑）
