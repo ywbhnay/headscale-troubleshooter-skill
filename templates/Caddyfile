@@ -1,51 +1,23 @@
-# Headscale Caddy 反代配置（Let's Encrypt 自动证书）
-# 与 Nginx 方案的对比：
-#   - Caddy 自动申请和续签 Let's Encrypt 公开证书
-#   - 不需要手动安装证书到系统信任库（公开 CA 已被系统信任）
-#   - flush_interval -1 等价于 Nginx 的 proxy_buffering off
-#     防止 Headscale HTTP long-polling 被缓冲导致 context canceled
-#
-# 使用前请将下方占位符替换为实际值
-#
-# Caddy 启动方式：
-#   caddy run --config Caddyfile
-# 或使用 systemd：
-#   sudo cp Caddyfile /etc/caddy/Caddyfile
-#   sudo systemctl restart caddy
+# Headscale Caddyfile 配置模板 (Let's Encrypt 自动证书)
+# 使用前请将 YOUR_DOMAIN_HERE 和 YOUR_PORT_HERE 替换为实际值
 
-# ======================== 替换下方占位符 ========================
-# YOUR_DOMAIN    → 你的 Headscale 域名（如 hs.example.com）
-# YOUR_PORT      → HTTPS 监听端口（默认 8443，腾讯云/阿里云建议非标端口绕过 SNI 拦截）
-# ================================================================
+YOUR_DOMAIN_HERE:YOUR_PORT_HERE {
+    # 自动申请公信证书
+    tls {
+        # 如果需要，这里可以填入你的邮箱
+        # email your-email@example.com
+    }
 
-{$YOUR_DOMAIN}:{$YOUR_PORT} {
-    # 反向代理到 Headscale 内部端口（默认 8080）
     reverse_proxy 127.0.0.1:8080 {
-        # 关键：禁用响应缓冲，支持 HTTP long-polling
-        # 等价于 Nginx 的 proxy_buffering off
-        # 不设置此项会导致 tailscale 长轮询超时（context canceled）
+        # 关键：禁用缓冲，支持长轮询 (等同于 nginx 的 proxy_buffering off)
         flush_interval -1
 
-        # 透传标准 Headers
+        transport http {
+            read_timeout 600s
+            write_timeout 600s
+        }
+
         header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
         header_up Connection ""
     }
-
-    # Let's Encrypt 自动证书（无需手动管理）
-    # Caddy 默认启用 ACME，自动申请和续签证书
-    # 如需使用自签名证书（无公网域名时），取消下方注释：
-    # tls internal
-
-    # 可选：健康检查端点
-    handle /health {
-        respond "OK" 200
-    }
-}
-
-# HTTP → HTTPS 重定向（Caddy 默认自动添加，如需自定义可显式声明）
-http://{$YOUR_DOMAIN} {
-    redir https://{$host}:{$YOUR_PORT}{uri}
 }
