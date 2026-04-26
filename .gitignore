@@ -1,0 +1,5 @@
+*.cer
+*.pem
+*.p12
+.env
+*.key

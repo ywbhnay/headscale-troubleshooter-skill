@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  headscale:
+    image: headscale/headscale:latest
+    container_name: headscale
+    restart: unless-stopped
+    volumes:
+      - ./config:/etc/headscale
+      - ./data:/var/lib/headscale
+    command: headscale serve
+    ports:
+      # Headscale 内部监听 8080
+      - "8080:8080"
+    networks:
+      - headscale-net
+
+  nginx:
+    image: nginx:alpine
+    container_name: headscale-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/headscale.conf:ro
+      - ./certs/cert.pem:/etc/nginx/cert.pem:ro
+      - ./certs/key.pem:/etc/nginx/key.pem:ro
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8443:443"   # 关键：将 8443 映射到容器内 443，绕过腾讯云 SNI 拦截
+    depends_on:
+      - headscale
+    networks:
+      - headscale-net
+
+  # 可选：DERP 中继服务
+  # headscale-derp:
+  #   image: headscale/headscale:latest
+  #   container_name: headscale-derp
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3478:3478/udp"  # STUN
+  #     - "8443:8443"      # DERP (使用非标端口)
+  #   volumes:
+  #     - ./config:/etc/headscale
+  #   command: headscale derp serve
+  #   networks:
+  #     - headscale-net
+
+networks:
+  headscale-net:
+    driver: bridge
