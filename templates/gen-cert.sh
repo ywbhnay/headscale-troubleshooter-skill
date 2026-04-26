@@ -6,16 +6,28 @@
 # 用法：
 #   chmod +x gen-cert.sh
 #   ./gen-cert.sh
+#
+# 脚本会读取下方配置区的变量，生成包含 SAN 的自签名证书。
+# 请将 YOUR_DOMAIN 和 YOUR_IP 替换为实际值。
 
 set -euo pipefail
 
 # ======================== 配置区 ========================
-DOMAIN="hs.167895.xyz"
-PUBLIC_IP="124.220.169.4"
-DAYS=3650          # 证书有效期（10 年）
+# 替换下方两个变量为你的实际域名和公网 IP
+DOMAIN="YOUR_DOMAIN"       # 例如: hs.example.com
+PUBLIC_IP="YOUR_IP"         # 例如: 124.220.169.4
+DAYS=3650                   # 证书有效期（10 年）
 RSA_BITS=2048
 OUTPUT_DIR="./certs"
 # ========================================================
+
+# 检查占位符是否已替换
+if [[ "${DOMAIN}" == "YOUR_DOMAIN" ]] || [[ "${PUBLIC_IP}" == "YOUR_IP" ]]; then
+    echo "[ERROR] 请先修改脚本中的 DOMAIN 和 PUBLIC_IP 变量！"
+    echo "  将 YOUR_DOMAIN 替换为你的 Headscale 域名"
+    echo "  将 YOUR_IP 替换为你的服务器公网 IP"
+    exit 1
+fi
 
 mkdir -p "${OUTPUT_DIR}"
 
@@ -58,8 +70,11 @@ fi
 
 echo ""
 echo "下一步:"
-echo "  1. 将 cert.pem 和 key.pem 复制到 /etc/nginx/"
+echo "  1. 将 cert.pem 和 key.pem 复制到 Nginx 配置目录"
+echo "     sudo cp ${CERT_FILE} /etc/nginx/cert.pem"
+echo "     sudo cp ${KEY_FILE} /etc/nginx/key.pem"
 echo "  2. 将 cert.pem 安装到系统信任库:"
 echo "     sudo cp ${CERT_FILE} /usr/local/share/ca-certificates/headscale.crt"
 echo "     sudo update-ca-certificates"
-echo "  3. 重启 tailscaled: sudo systemctl restart tailscaled"
+echo "  3. 重启 Nginx: sudo systemctl restart nginx"
+echo "  4. 重启 tailscaled: sudo systemctl restart tailscaled"
