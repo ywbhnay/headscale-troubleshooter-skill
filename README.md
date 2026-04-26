@@ -13,11 +13,14 @@
 ### 作为工具包使用
 
 ```bash
-# Linux 客户端一键安装
-curl -sL https://raw.githubusercontent.com/ywbhnay/headscale-troubleshooter-skill/main/scripts/install-linux.sh | bash
+# Linux 客户端一键安装（需要传入参数）
+curl -sL https://raw.githubusercontent.com/ywbhnay/headscale-troubleshooter-skill/main/scripts/install-linux.sh \
+  | bash -s -- <域名> <端口> <AuthKey>
 
 # Windows 客户端（PowerShell 管理员）
-iwr https://raw.githubusercontent.com/ywbhnay/headscale-troubleshooter-skill/main/scripts/install-win.ps1 -UseBasicParsing | iex
+# 先下载脚本，然后带参数执行：
+iwr https://raw.githubusercontent.com/ywbhnay/headscale-troubleshooter-skill/main/scripts/install-win.ps1 -OutFile install-win.ps1
+.\install-win.ps1 -Domain "<域名>" -Port 8443 -AuthKey "<AuthKey>"
 ```
 
 ## 项目结构
