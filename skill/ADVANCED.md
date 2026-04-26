@@ -1,4 +1,4 @@
-# Headscale Troubleshooter — Skill Definition v1.1
+# Headscale Troubleshooter — Skill Definition v1.2
 
 > 将此文件内容完整复制为 AI 助手的 System Prompt
 
@@ -441,6 +441,59 @@ AI 在介入排障时，必须先明确自己的身份：
 | LXC 容器 netfilter 权限 | **客户端 AI** | 加 `--netfilter-mode=off --accept-dns=false` |
 | 本地透明代理 DNS 劫持 | **客户端 AI** | 在 mihomo 规则中添加 Headscale 域名 DIRECT，或使用 iptables 豁免 |
 
+### 9. 透明代理（Mihomo/Clash）TCP 长连接阻断与 UDP 丢弃
+
+**现象:** DNS 放行、`curl` 通 Headscale 域名、HTTPS 证书正常，但 `tailscale up` 持续 hang 住，无报错无超时。
+
+**根因:** 透明代理（Mihomo/Clash）在 DNS 放行后仍会在内核网络层劫持流量：
+
+1. **TCP 长连接被劫持后不转发:** DNS 解析被豁免后，Mihomo 仍可能拦截 Tailscale 控制面长轮询的 TCP 连接。由于 TUN 模式下的规则优先级问题，流量进入 Mihomo 后既不转发也不拒绝，表现为 `tailscale up` 永久 hang 住。
+2. **UDP 静默丢弃:** Mihomo TUN 模式默认不处理 UDP 41641（WireGuard 数据面）和 UDP 3478（STUN/DERP），导致数据面完全不通。
+3. **iptables NAT 劫持未豁免:** 即使 DNS 正确解析，iptables NAT 规则仍可能将流量重定向到 Mihomo 监听端口，形成"DNS 对了但流量进了代理"的隐蔽坑。
+
+**解法（按优先级排序）:**
+
+**方案 A — iptables 内核级豁免（终极方案）:**
+```bash
+# 豁免 Headscale 控制面 TCP（所有相关端口）
+sudo iptables -t nat -I PREROUTING 1 -d {{HEADSCALE_IP}} -p tcp --dport {{HEADSCALE_PORT}} -j RETURN
+
+# 豁免 WireGuard 数据面 UDP
+sudo iptables -t nat -I PREROUTING 1 -d {{HEADSCALE_IP}} -p udp --dport 41641 -j RETURN
+
+# 豁免 STUN/DERP UDP
+sudo iptables -t nat -I PREROUTING 1 -d {{HEADSCALE_IP}} -p udp --dport 3478 -j RETURN
+
+# 如果启用了 OUTPUT 链 NAT（本地进程也走透明代理）
+sudo iptables -t nat -I OUTPUT 1 -d {{HEADSCALE_IP}} -p tcp --dport {{HEADSCALE_PORT}} -j RETURN
+sudo iptables -t nat -I OUTPUT 1 -d {{HEADSCALE_IP}} -p udp --dport 41641 -j RETURN
+sudo iptables -t nat -I OUTPUT 1 -d {{HEADSCALE_IP}} -p udp --dport 3478 -j RETURN
+```
+
+**方案 B — Mihomo 规则层放行:**
+```yaml
+# mihomo rules.yaml
+rules:
+  # Headscale 控制面直连
+  - DOMAIN,{{HEADSCALE_DOMAIN}},DIRECT
+  - IP-CIDR,{{HEADSCALE_IP}}/32,DIRECT,no-resolve
+  # WireGuard + STUN/DERP UDP 直连
+  - UDP-PORT,41641,DIRECT
+  - UDP-PORT,3478,DIRECT
+```
+
+**方案 C — 临时关闭 TUN 模式:**
+在运行 `tailscale up` 前临时关闭 Mihomo 的 TUN 模式，认证成功后再恢复。这是最快速但不优雅的验证方式。
+
+**验证方法:**
+```bash
+# 确认规则已生效
+sudo iptables -t nat -L PREROUTING -n --line-numbers | head -10
+
+# 确认 tailscale 不再 hang
+tailscale up --login-server=https://{{HEADSCALE_DOMAIN}}:{{HEADSCALE_PORT}} --authkey={{AUTHKEY}}
+```
+
 ---
 
 ## 标准化诊断 SOP
@@ -865,6 +918,12 @@ echo "============================================"
 │
 ├─ tailscale status → 节点 online，但 tx N rx 0？
 │   └─ 检查 DERP: tailscale debug derp 999（两端都要跑）
+│
+├─ curl 正常但 tailscale up hang 住？
+│   └─ 透明代理（Mihomo/Clash）TCP 长连接阻断 + UDP 丢弃
+│       1. iptables -t nat -I PREROUTING -d {{HEADSCALE_IP}} -j RETURN
+│       2. 规则层放行 UDP 41641/3478
+│       3. 或临时关闭 Mihomo TUN 模式验证
 │
 ├─ journalctl → failed to enable netfilter: operation not permitted？
 │   └─ LXC 容器！加 --netfilter-mode=off --accept-dns=false 重新连接

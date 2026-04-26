@@ -14,10 +14,10 @@
 
 ```bash
 # Linux 客户端一键安装
-curl -sL https://raw.githubusercontent.com/<you>/headscale-troubleshooter-skill/main/scripts/install-linux.sh | bash
+curl -sL https://raw.githubusercontent.com/ywbhnay/headscale-troubleshooter-skill/main/scripts/install-linux.sh | bash
 
 # Windows 客户端（PowerShell 管理员）
-iwr https://raw.githubusercontent.com/<you>/headscale-troubleshooter-skill/main/scripts/install-win.ps1 -UseBasicParsing | iex
+iwr https://raw.githubusercontent.com/ywbhnay/headscale-troubleshooter-skill/main/scripts/install-win.ps1 -UseBasicParsing | iex
 ```
 
 ## 项目结构
@@ -33,7 +33,8 @@ headscale-troubleshooter-skill/
 ├── templates/
 │   ├── nginx.conf            # Nginx 配置模板（含 SNI 规避 + 缓冲关闭）
 │   ├── docker-compose.yml    # Docker Compose 配置模板
-│   └── gen-cert.sh           # SAN 证书生成脚本
+│   ├── gen-cert.sh           # SAN 证书生成脚本
+│   └── Caddyfile             # Caddy 反代配置（Let's Encrypt 自动证书）
 └── reports/
     └── troubleshooting.md    # 完整排障报告
 ```
