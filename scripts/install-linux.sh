@@ -1,6 +1,6 @@
 #!/bin/bash
 # Headscale Troubleshooter — Linux 一键安装脚本
-# 用途：自动检测环境、安装自签名证书完整链、静默接入 Headscale
+# 用途：自动检测环境、安装 tailscale、安装自签名证书完整链、静默接入 Headscale
 
 set -euo pipefail
 
@@ -19,6 +19,15 @@ fi
 HEADSCALE_URL="https://${HEADSCALE_DOMAIN}:${HEADSCALE_PORT}"
 CERT_DIR="/usr/local/share/ca-certificates"
 CERT_PATH="${CERT_DIR}/headscale-ca.crt"
+
+echo -e "\033[0;32m[INFO] 0. 检测 tailscale 是否已安装\033[0m"
+if ! command -v tailscale &>/dev/null; then
+    echo -e "\033[1;33m[WARN] 未检测到 tailscale，正在安装...\033[0m"
+    curl -fsSL https://tailscale.com/install.sh | sh
+    echo -e "\033[0;32m[INFO] tailscale 安装完成\033[0m"
+else
+    echo -e "\033[0;32m[INFO] tailscale 已安装：$(tailscale version)\033[0m"
+fi
 
 echo -e "\033[0;32m[INFO] 1. 彻底断开旧连接并清理状态\033[0m"
 sudo tailscale down 2>/dev/null || true
