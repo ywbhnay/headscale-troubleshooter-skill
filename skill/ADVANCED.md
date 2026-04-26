@@ -103,6 +103,19 @@ location / {
 > 请您将准备好的 AuthKey 发送给我，我将直接为您生成一键接入脚本。
 > （提示：如果您手头还没有，可以通过您的 Headscale 服务器后台或 Headplane 面板生成一个。）
 
+**AuthKey 失效时的自查逻辑（客户端 AI 第一反应）：**
+当 `tailscale up --authkey=...` 返回 `key is invalid`、`key has expired`、或类似认证失败时，**不要引导用户去服务器执行 `nodes register`**。按以下顺序排查：
+
+1. **检查命令是否确实携带了 `--authkey` 参数** — 用户可能漏贴或贴错
+2. **检查 AuthKey 是否已过期** — AuthKey 有默认有效期（通常 24h），过期后必须重新生成
+3. **检查 AuthKey 是否已被使用且不可复用** — 非 reusable 的 key 只能用一次
+
+确认 AuthKey 失效后，引导用户获取新的 AuthKey：
+> 您之前的 AuthKey 已失效（过期或已被使用）。为了继续保持全自动化接入流程，请您提供一个新的 AuthKey，我将为您重新生成一键脚本。
+> （手动注册 `headscale nodes register` 是由于 AuthKey 失效导致的降级方案，不推荐作为标准流程。）
+
+**核心原则：** 无论遇到什么认证阻碍，最终目标始终是引导用户拿到一个有效的 AuthKey，实现"静默一键上线"。禁止退化为让用户去服务器敲注册命令。
+
 **正确做法（全环境通用 — VM / LXC / Win11 均需使用）:**
 ```bash
 # ❌ 错误 — 浏览器交互式认证，无头环境会永久挂起
@@ -244,8 +257,17 @@ features: fuse=1,nesting=1
 AI 在介入排障时，必须先明确自己的身份：
 - **客户端 AI**：驻扎在本地节点（LXC 容器、VM、Win11 等），负责接入 Tailscale 网络
 - **服务端 AI**：驻扎在云端服务器（Ubuntu + Nginx + Headscale），负责控制面基础设施
+- **用户（管理员）**：负责在两端之间传递信息（AuthKey、证书地址、指令）
 
 **坚守能力边界：各自只处理自己所在机器的底层网络栈、配置和脚本执行。**
+
+**三方职责明确分工：**
+
+| 角色 | 职责范围 | 禁止越权 |
+|------|---------|---------|
+| **客户端 AI** | 本地环境调优：MTU、证书导入、LXC 权限、透明代理排查、tailscale 启动参数 | 不操作服务端，不引导用户在服务器敲命令 |
+| **服务端 AI** | 环境搭建：Docker、Nginx、Headscale 配置、生成 AuthKey | 不操作客户端本地环境 |
+| **用户（管理员）** | 将 AuthKey 从服务端传递给客户端，传递排障指令 | 不参与底层技术细节 |
 
 #### 8.2 客户端 AI (Client Agent) 工作守则
 
@@ -354,7 +376,8 @@ tailscale debug prefs
 |-----------|------|------|
 | `context canceled` | Nginx 缓冲问题 | 知识库 2 |
 | `certificate signed by unknown authority` | 服务端 tailscaled 不信任证书 | 知识库 4 |
-| `AuthURL is https://...` 等待中 | 缺少 authkey，Linux 无头环境会永久挂起 | 必须加 `--authkey` 重新执行 |
+| `AuthURL is https://...` 等待中 | 缺少 authkey，Linux 无头环境会永久挂起 | 知识库 5：加 `--authkey` 重新执行，无 Key 则用标准话术索取 |
+| `key is invalid` / `key has expired` | AuthKey 失效 | 知识库 5：引导获取新 AuthKey，禁止退化为手动注册 |
 | `netmap: ...` | 认证成功 | 进入 Phase 3 |
 
 ### Phase 3: 数据面 — DERP 是否双向连接？
